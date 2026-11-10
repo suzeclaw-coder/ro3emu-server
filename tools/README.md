@@ -14,6 +14,7 @@ ignored `data/` and `re/` folders. The main [README](../README.md#1-export-the-g
 | `Loc/` | the localization pipeline behind `Ro3Emu.Loc`: scans the client for Chinese text, builds the translation queue and the `loc_*.tsv` maps |
 | `ClientTextures/` | renders English versions of images with baked-in Chinese text from a texture dump of your client |
 | `EconomyProbe` | read-only economy snapshots and ledger checks against a server database (used by load scenario S3) |
+| `Ro3Launcher` | Win32 pipe handshake launcher: spawns `ro3.exe`, writes `RO3_LAUNCH_PROOF_V1` to the inherited pipe, and forwards launch flags (used for Wine/macOS client execution) |
 | `patch-client.ps1` | rebuilds the client hooks and patches the client in `RO3_CLIENT_DIR` against a local server |
 | `nightly-tests.ps1`, `install-nightly-task.ps1` | the whole test suite with client data and the client-only builds, once a day ([testing guide](../docs/guide/testing.md#the-nightly-run)) |
 | `run-server.ps1` | runs the server and restarts it when it exits, logging to `data/logs/` |

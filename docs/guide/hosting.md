@@ -13,7 +13,20 @@ is off unless the host adds `--voice-port 33101` (any free port); then forward t
 ./server.sh --service ...                                                       # install it as a systemd service
 ```
 
-Open TCP `5380`, `20000` and `33100`, and the voice port if you turn voice on with `--voice-port 33101`.
+**On macOS.** The server and backend tools run natively on macOS (Apple Silicon or Intel). Clone the repository, export the game data from a client copy, and start the server:
+
+```bash
+# 1. Export game data (first run only; needs a copy of the Windows client)
+dotnet run --project src/Ro3Emu.Setup -c Release -- export /path/to/ROO_PC data
+
+# 2. Start the server (interactive terminal)
+scripts/server.sh --host <your IP> --gm <your account>
+
+# Or install as a launchd service (runs in background on login, auto-restarts):
+scripts/server.sh --service --host <your IP> --gm <your account>
+```
+
+Open TCP `5380`, `20000` and `33100`, and the voice port if you turn voice on with `--voice-port 33101`. On macOS, ensure incoming connections are allowed in System Settings -> Network -> Firewall.
 
 **Good to know**
 - **GM commands** (`!help` in chat) are on for every account when you play on your own PC. A hosted server gives them
