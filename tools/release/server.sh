@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# RO3Emu server on Linux, from the release archive: nothing to install (the server and the RO3Emu tool are
+# RO3Emu server on Linux and macOS, from the release archive: nothing to install (the server and the RO3Emu tool are
 # self-contained). Exports the game data from a game folder on the first run, then runs the server in this terminal
-# or as a systemd service. Players join from Windows with: RO3Emu.exe join <address>
+# or as a service (systemd on Linux, launchd on macOS). Players join from Windows with: RO3Emu.exe join <address>
 #
 # usage: ./server.sh [--client DIR | --download DIR] [--host ADDRESS] [--gm ACCOUNT] [--voice-port PORT] [--panel-port PORT | --no-panel] [--no-icons] [--service] [--reexport] [--allow-root]
 #   --client DIR    a game folder copied from Windows (at least its ro3_Data/StreamingAssets); first run only
@@ -11,11 +11,12 @@
 #   --voice-port PORT  turn on party voice chat on this TCP port, for example 33101 (off by default)
 #   --panel-port PORT  the web panel for players and admins on this TCP port (default 5381); --no-panel: none
 #   --no-icons      no pictures for the web panel (decoded from the game; 120 MB)
-#   --service       install and start a systemd service (needs sudo) instead of running in this terminal
+#   --service       install and start as a service (systemd on Linux, launchd on macOS) instead of running in this terminal
 #   --reexport      export the game data again (after a game update)
 #   --allow-root    run as root anyway (a hole in the server would then own the whole machine)
 set -euo pipefail
-cd "$(dirname "$(readlink -f "$0")")"
+resolve_path() { readlink -f "$1" 2>/dev/null || realpath "$1" 2>/dev/null || echo "$1"; }
+cd "$(dirname "$(resolve_path "$0")")"
 root=$(pwd)
 
 client=""; download=""; host=""; voice=""; panel=5381; service=0; reexport=0; allow_root=0; gms=(); icons=()
@@ -65,12 +66,15 @@ if [ "$reexport" = 1 ] || [ ! -f data/config/MapResource.json ] || [ ! -f data/m
     read -r -p '  Path of the game folder: ' client
   fi
   [ -d "$client/ro3_Data/StreamingAssets/Recovery/LuaPayload" ] || fail "No ro3_Data/StreamingAssets/Recovery/LuaPayload in '$client'. Copy the whole game folder and pass it with --client."
-  ./RO3Emu export "$(readlink -f "$client")" "$root/data" "${icons[@]}"
+  ./RO3Emu export "$(resolve_path "$client")" "$root/data" "${icons[@]}"
 fi
 
 # 2. Settings: the address players reach, GM accounts, open content and the battle pass.
 if [ -z "$host" ]; then
-  host=$(hostname -I 2>/dev/null | awk '{print $1}')
+  if command -v ipconfig >/dev/null 2>&1; then
+    host=$(ipconfig getifaddr en0 2>/dev/null || ipconfig getifaddr en1 2>/dev/null || ifconfig 2>/dev/null | awk '/inet / && !/127.0.0.1/ {print $2; exit}')
+  fi
+  [ -n "$host" ] || host=$(hostname -I 2>/dev/null | awk '{print $1}')
   [ -n "$host" ] || host=127.0.0.1
 fi
 case "$host" in
@@ -98,6 +102,8 @@ ports_note() {
   fi
   if command -v ufw >/dev/null && sudo -n ufw status 2>/dev/null | grep -q 'Status: active'; then
     echo "  ufw: sudo ufw allow 5380/tcp && sudo ufw allow 20000/tcp && sudo ufw allow 33100/tcp${voice:+ && sudo ufw allow $voice/tcp}"
+  elif [ "$(uname -s)" = "Darwin" ]; then
+    echo "  macOS: check System Settings -> Network -> Firewall to allow incoming connections."
   fi
   echo "Players: RO3Emu.exe join $host"
   [ "$panel" = 0 ] || echo "Web panel: http://$host:$panel (open TCP $panel too, or put it behind https: docs/guide/panel.md)"
@@ -105,38 +111,85 @@ ports_note() {
 
 # 3. Run: as a service, or in this terminal (Ctrl+C stops it).
 if [ "$service" = 1 ]; then
-  step 'Installing the systemd service ro3emu'
-  unit=/etc/systemd/system/ro3emu.service
-  {
-    echo '[Unit]'
-    echo 'Description=RO3Emu server'
-    echo 'After=network.target'
-    echo
-    echo '[Service]'
-    echo "User=$(id -un)"
-    echo "WorkingDirectory=$root/server"
-    echo "ExecStart=$root/server/Ro3Emu.Server --Ro3Emu:PreloadGameData=true"
-    for s in "${settings[@]}"; do echo "Environment=$s"; done
-    echo 'Restart=always'
-    # A shutdown planned on the web panel exits 0 and stays down; its restart exits 75 and comes back.
-    echo 'RestartPreventExitStatus=0'
-    # The server writes only below this folder (data, logs, its own updates); the rest of the system is read-only to it.
-    # The single-file build unpacks below it too, not into ~/.net, which ProtectHome makes read-only.
-    echo "Environment=DOTNET_BUNDLE_EXTRACT_BASE_DIR=$root/.net"
-    echo 'NoNewPrivileges=yes'
-    echo 'ProtectSystem=strict'
-    echo 'ProtectHome=read-only'
-    echo 'PrivateTmp=yes'
-    echo "ReadWritePaths=$root"
-    echo
-    echo '[Install]'
-    echo 'WantedBy=multi-user.target'
-  } | sudo tee "$unit" >/dev/null
-  sudo systemctl daemon-reload
-  sudo systemctl enable --now ro3emu
-  sudo systemctl restart ro3emu
-  echo "Running. Logs: journalctl -u ro3emu -f   Stop: sudo systemctl stop ro3emu"
-  ports_note
+  if [ "$(uname -s)" = "Darwin" ]; then
+    step 'Installing the launchd agent com.ro3emu.server'
+    plist="$HOME/Library/LaunchAgents/com.ro3emu.server.plist"
+    mkdir -p "$HOME/Library/LaunchAgents" "$root/logs"
+    launchctl bootout "gui/$(id -u)/com.ro3emu.server" 2>/dev/null || launchctl unload "$plist" 2>/dev/null || true
+    cat > "$plist" <<EOF
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.ro3emu.server</string>
+  <key>WorkingDirectory</key>
+  <string>$root/server</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>$root/server/Ro3Emu.Server</string>
+    <string>--Ro3Emu:PreloadGameData=true</string>
+  </array>
+  <key>EnvironmentVariables</key>
+  <dict>
+$(for s in "${settings[@]}"; do
+    k="${s%%=*}"
+    v="${s#*=}"
+    echo "    <key>$k</key>"
+    echo "    <string>$v</string>"
+  done)
+  </dict>
+  <key>RunAtLoad</key>
+  <true/>
+  <key>KeepAlive</key>
+  <dict>
+    <key>SuccessfulExit</key>
+    <false/>
+  </dict>
+  <key>StandardOutPath</key>
+  <string>$root/logs/server.out.log</string>
+  <key>StandardErrorPath</key>
+  <string>$root/logs/server.err.log</string>
+</dict>
+</plist>
+EOF
+    launchctl bootstrap "gui/$(id -u)" "$plist" 2>/dev/null || launchctl load "$plist"
+    echo "Running. Logs: $root/logs/server.err.log   Stop: launchctl bootout gui/$(id -u)/com.ro3emu.server"
+    ports_note
+  else
+    step 'Installing the systemd service ro3emu'
+    unit=/etc/systemd/system/ro3emu.service
+    {
+      echo '[Unit]'
+      echo 'Description=RO3Emu server'
+      echo 'After=network.target'
+      echo
+      echo '[Service]'
+      echo "User=$(id -un)"
+      echo "WorkingDirectory=$root/server"
+      echo "ExecStart=$root/server/Ro3Emu.Server --Ro3Emu:PreloadGameData=true"
+      for s in "${settings[@]}"; do echo "Environment=$s"; done
+      echo 'Restart=always'
+      # A shutdown planned on the web panel exits 0 and stays down; its restart exits 75 and comes back.
+      echo 'RestartPreventExitStatus=0'
+      # The server writes only below this folder (data, logs, its own updates); the rest of the system is read-only to it.
+      # The single-file build unpacks below it too, not into ~/.net, which ProtectHome makes read-only.
+      echo "Environment=DOTNET_BUNDLE_EXTRACT_BASE_DIR=$root/.net"
+      echo 'NoNewPrivileges=yes'
+      echo 'ProtectSystem=strict'
+      echo 'ProtectHome=read-only'
+      echo 'PrivateTmp=yes'
+      echo "ReadWritePaths=$root"
+      echo
+      echo '[Install]'
+      echo 'WantedBy=multi-user.target'
+    } | sudo tee "$unit" >/dev/null
+    sudo systemctl daemon-reload
+    sudo systemctl enable --now ro3emu
+    sudo systemctl restart ro3emu
+    echo "Running. Logs: journalctl -u ro3emu -f   Stop: sudo systemctl stop ro3emu"
+    ports_note
+  fi
 else
   step "Starting the server on $host (Ctrl+C stops it)"
   ports_note
