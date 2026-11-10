@@ -71,7 +71,15 @@ Apple Silicon Liquid Retina displays have high native resolutions (e.g., 3024×1
 - **High Resolution Mode:** Keep disabled in CrossOver bottle settings so the display buffer uses 1x logical coordinates (`1512×982`).
 - **Resolution Cap Flag:** Launch with `-screen-width 1920 -screen-height 1080` (or 16:9 / 16:10 standard resolutions) to cap the internal backbuffer.
 
-### 5. Launch Scripts (`launch-ro3.sh` / `launch-ro3.command`)
+### 5. In-Game FPS & Performance Monitoring
+- **Built-in HUD:** By default, Ragnarok 3 displays real-time performance statistics in the top-left corner above the character portrait: `[Quality Preset] [Local Time] [Ping ms] [FPS]` (e.g., `Medium 22:39 0ms 104FPS`).
+- **Target Frame Rate Cap:** Press `Esc` (or bottom-right Menu) -> **Settings** -> **Picture Quality / 画面** -> **Frame Rate Cap / 帧率上限** to toggle between 30 FPS, 60 FPS, or High / Unlimited.
+- **macOS Metal Performance HUD:** To view Apple's native GPU metrics overlay (frame times, frame graphs, and draw calls), run the launch script with `MTL_HUD_ENABLED=1`:
+  ```bash
+  MTL_HUD_ENABLED=1 ./launch-ro3.sh
+  ```
+
+### 6. Launch Scripts (`launch-ro3.sh` / `launch-ro3.command`)
 Use the helper scripts in the game folder to launch with all optimized environment variables:
 ```bash
 #!/usr/bin/env bash
@@ -101,7 +109,7 @@ fi
 exec "$CX_BIN" --bottle RO3 --workdir "$DIR" "$DIR/Ro3Launcher.exe" "$@" "${EXTRA_ARGS[@]}"
 ```
 
-### 6. Troubleshooting
+### 7. Troubleshooting
 - **Black/Blank 3D Screen (UI and minimap visible):** Ensure `gfx-enable-gfx-jobs=0` in `ro3_Data/boot.config` and use `CX_GRAPHICS_BACKEND=wined3d`.
 - **`[mvk-error] Vertex attribute v6(6) of type uint4 cannot be read using MTLAttributeFormatFloat4`:** Harmless warning produced by MoltenVK when compiling minor shader permutations (e.g. bone indices). It does not affect gameplay and is silenced by setting `MVK_CONFIG_LOG_LEVEL=0`.
-- **GStreamer Assertion `gst_video_info_from_caps`: Harmless video decoder debug assertion during intro/cutscene playback. Silenced by `GST_DEBUG=0` and `WINEDEBUG=-all`.
+- **GStreamer Assertion (`gst_video_info_from_caps`):** Harmless video decoder debug assertion during intro/cutscene playback. Silenced by `GST_DEBUG=0` and `WINEDEBUG=-all`.

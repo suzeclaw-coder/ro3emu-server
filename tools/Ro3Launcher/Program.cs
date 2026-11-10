@@ -16,7 +16,13 @@ internal static class Program
         string exe = Path.Combine(dir, "ro3.exe");
         if (!File.Exists(exe))
         {
-            Console.WriteLine("ro3.exe not found in " + dir);
+            dir = Directory.GetCurrentDirectory().TrimEnd('\\', '/');
+            exe = Path.Combine(dir, "ro3.exe");
+        }
+
+        if (!File.Exists(exe))
+        {
+            Console.WriteLine($"ro3.exe not found in {AppDomain.CurrentDomain.BaseDirectory} or current directory.");
             return 1;
         }
 
@@ -37,17 +43,25 @@ internal static class Program
         }
         pipe.DisposeLocalCopyOfClientHandle();
 
-        long now = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
-        string proof = string.Join("\r\n",
-            "RO3_LAUNCH_PROOF_V1",
-            game.Id.ToString(CultureInfo.InvariantCulture),
-            now.ToString(CultureInfo.InvariantCulture),
-            (now + 30).ToString(CultureInfo.InvariantCulture),
-            Convert.ToHexStringLower(RandomNumberGenerator.GetBytes(32))) + "\r\n";
-        byte[] bytes = Encoding.ASCII.GetBytes(proof);
-        pipe.Write(bytes, 0, bytes.Length);
-        pipe.Flush();
-        Console.WriteLine($"[Ro3Launcher] Handshake sent to ro3.exe (PID {game.Id.ToString(CultureInfo.InvariantCulture)}). Game running!");
+        try
+        {
+            long now = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+            string proof = string.Join("\r\n",
+                "RO3_LAUNCH_PROOF_V1",
+                game.Id.ToString(CultureInfo.InvariantCulture),
+                now.ToString(CultureInfo.InvariantCulture),
+                (now + 30).ToString(CultureInfo.InvariantCulture),
+                Convert.ToHexStringLower(RandomNumberGenerator.GetBytes(32))) + "\r\n";
+            byte[] bytes = Encoding.ASCII.GetBytes(proof);
+            pipe.Write(bytes, 0, bytes.Length);
+            pipe.Flush();
+            Console.WriteLine($"[Ro3Launcher] Handshake sent to ro3.exe (PID {game.Id.ToString(CultureInfo.InvariantCulture)}). Game running!");
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[Ro3Launcher] Warning: Could not complete pipe handshake: {ex.Message}");
+        }
+
         game.WaitForExit();
         return game.ExitCode;
     }

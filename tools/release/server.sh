@@ -71,10 +71,11 @@ fi
 
 # 2. Settings: the address players reach, GM accounts, open content and the battle pass.
 if [ -z "$host" ]; then
-  if command -v ipconfig >/dev/null 2>&1; then
+  if [ "$(uname -s)" = "Darwin" ]; then
     host=$(ipconfig getifaddr en0 2>/dev/null || ipconfig getifaddr en1 2>/dev/null || ifconfig 2>/dev/null | awk '/inet / && !/127.0.0.1/ {print $2; exit}')
+  else
+    host=$(hostname -I 2>/dev/null | awk '{print $1}')
   fi
-  [ -n "$host" ] || host=$(hostname -I 2>/dev/null | awk '{print $1}')
   [ -n "$host" ] || host=127.0.0.1
 fi
 case "$host" in
@@ -132,6 +133,8 @@ if [ "$service" = 1 ]; then
   </array>
   <key>EnvironmentVariables</key>
   <dict>
+    <key>PATH</key>
+    <string>$PATH</string>
 $(for s in "${settings[@]}"; do
     k="${s%%=*}"
     v="${s#*=}"
